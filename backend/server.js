@@ -6,14 +6,16 @@ const mongoose = require('mongoose');
 
 const app = express();
 const server = http.createServer(app);
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://192.168.70.110:3001';
+
+// Use environment variables for production, fallback to localhost for development
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
+const PORT = process.env.PORT || 3000;
+
 const io = new Server(server, {
   cors: {
     origin: [
       FRONTEND_URL,
-      'http://localhost:3001',
-      'http://192.168.70.110:3001',
-      'http://127.0.0.1:3001',
+      'http://localhost:3000',
       'https://*.ngrok.io'
     ],
     methods: ['GET', 'POST'],
@@ -24,9 +26,7 @@ const io = new Server(server, {
 app.use(cors({
   origin: [
     FRONTEND_URL,
-    'http://localhost:3001',
-    'http://192.168.70.110:3001',
-    'http://127.0.0.1:3001',
+    'http://localhost:3000',
     'https://*.ngrok.io'
   ],
   credentials: true
@@ -481,4 +481,4 @@ socket.on('disconnect', () => {
 });
 });
 
-server.listen(3000, '0.0.0.0', () => console.log('DEBUG: Server on http://0.0.0.0:3000'));
+server.listen(PORT, '0.0.0.0', () => console.log(`DEBUG: Server on port ${PORT}`));
