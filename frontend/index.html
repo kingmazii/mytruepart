@@ -131,12 +131,12 @@
   <div id="root"></div>
   <script type="text/babel">
     const { useState, useEffect } = React;
-    const socket = io('http://192.168.70.110:3000/', {
-      transports: ['websocket', 'polling'],
-      reconnection: true,
-      reconnectionAttempts: 5,
-      reconnectionDelay: 1000
-    });
+const socket = io(window.location.origin, {
+  transports: ['websocket', 'polling'],
+  reconnection: true,
+  reconnectionAttempts: 5,
+  reconnectionDelay: 1000
+});
 
     socket.on('connect_error', (error) => {
       console.error('Socket connection error:', error);
