@@ -58,8 +58,15 @@ const Session = mongoose.models.Session || mongoose.model('Session', sessionSche
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
 
-  socket.on('createSession', (data) => {
-    // Handle session creation
+  socket.on('createSession', async (data) => {
+    try {
+      const session = new Session({ ...data, sessionId: generateSessionId() });
+      await session.save();
+      socket.emit('sessionCreated', session);
+    } catch (error) {
+      console.error('Error creating session:', error);
+      socket.emit('error', { message: 'Failed to create session' });
+    }
   });
 
   socket.on('joinSession', (data) => {
@@ -81,11 +88,22 @@ const emitResults = async (session, sessionId, io) => {
 
   const players = session.players.filter(p => p !== 'admin');
   const submittedUsers = [...new Set(session.ratings.map(r => r.rater))];
-  // Add your emitResults logic here (e.g., io.to(sessionId).emit(...))
+  // Add your emitResults logic here, e.g.:
+  // io.to(sessionId).emit('results', { players, submittedUsers });
 };
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).send('Something went wrong!');
+});
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+function generateSessionId() {
+  return Math.random().toString(36).substr(2, 9);
+}
   
   // For game mode: wait for ALL players to submit before showing results
   if (session.isGameMode) {
