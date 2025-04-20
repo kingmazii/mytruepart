@@ -1,48 +1,44 @@
 const express = require('express');
-const http = require('http');
-const { Server } = require('socket.io');
 const cors = require('cors');
 const mongoose = require('mongoose');
+const { createServer } = require('http');
+const { Server } = require('socket.io');
+const path = require('path');
 
 const app = express();
-const server = http.createServer(app);
+const server = createServer(app);
 
-// Use environment variables for production, fallback to localhost for development
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
-const PORT = process.env.PORT || 3000;
+// CORS configuration
+const allowedOrigins = [process.env.FRONTEND_URL];
+if (process.env.NODE_ENV !== 'production') {
+  allowedOrigins.push('http://localhost:3000');
+}
 
 const io = new Server(server, {
   cors: {
-    origin: [
-      FRONTEND_URL,
-      'http://localhost:3000',
-      'https://*.ngrok.io'
-    ],
+    origin: allowedOrigins,
     methods: ['GET', 'POST'],
     credentials: true,
   },
 });
 
 app.use(cors({
-  origin: [
-    FRONTEND_URL,
-    'http://localhost:3000',
-    'https://*.ngrok.io'
-  ],
-  credentials: true
+  origin: allowedOrigins,
+  credentials: true,
 }));
 app.use(express.json());
+app.use(express.static(path.join(__dirname, 'frontend')));
 
-const mongoURI = 'mongodb+srv://send2mazi:Mazyar4321@iknowme.spbc4cr.mongodb.net/iknowme?retryWrites=true&w=majority&appName=iKnowMe';
-let sessions = {};
-
-mongoose.connect(mongoURI)
-  .then(() => console.log('DEBUG: Connected to MongoDB Atlas'))
+// MongoDB connection
+const mongoURI = process.env.MONGO_URI;
+mongoose.connect(mongoURI, { useNewUrlParser: true, useUnifiedTopology: true })
+  .then(() => console.log('MongoDB connected'))
   .catch(err => {
-    console.error('DEBUG: MongoDB Atlas connection failed:', err.message);
-    console.log('DEBUG: Using in-memory sessions');
+    console.error('MongoDB connection error:', err);
+    process.exit(1);
   });
 
+// Session schema and model
 const sessionSchema = new mongoose.Schema({
   sessionId: String,
   players: [String],
@@ -57,19 +53,39 @@ const sessionSchema = new mongoose.Schema({
   timerStarted: Boolean,
   startTime: Number
 });
-
 const Session = mongoose.models.Session || mongoose.model('Session', sessionSchema);
 
+io.on('connection', (socket) => {
+  console.log('Client connected:', socket.id);
+
+  socket.on('createSession', (data) => {
+    // Handle session creation
+  });
+
+  socket.on('joinSession', (data) => {
+    // Handle joining session
+  });
+
+  socket.on('disconnect', () => {
+    console.log('Client disconnected:', socket.id);
+  });
+});
+
 const emitResults = async (session, sessionId, io) => {
-  console.log('DEBUG: emitResults called', { 
-    sessionId, 
+  console.log('DEBUG: emitResults called', {
+    sessionId,
     submitted: [...new Set(session.ratings.map(r => r.rater))].length,
     isAnonymous: session.isAnonymous,
     isGameMode: session.isGameMode
   });
-  
+
   const players = session.players.filter(p => p !== 'admin');
   const submittedUsers = [...new Set(session.ratings.map(r => r.rater))];
+  // Add your emitResults logic here (e.g., io.to(sessionId).emit(...))
+};
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
   
   // For game mode: wait for ALL players to submit before showing results
   if (session.isGameMode) {
