@@ -480,5 +480,13 @@ socket.on('disconnect', () => {
   console.log('DEBUG: Client disconnected:', socket.id);
 });
 });
+const path = require('path');
 
+// Serve static files from the frontend folder (adjust if needed)
+app.use(express.static(path.join(__dirname, '../frontend')));
+
+// Fallback route for SPA (handles React-style hash routing like #/link)
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend/index.html'));
+});
 server.listen(PORT, '0.0.0.0', () => console.log(`DEBUG: Server on port ${PORT}`));
