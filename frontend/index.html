@@ -1,0 +1,1283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>iKnowMe App</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prop-types/15.8.1/prop-types.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode/1.5.1/qrcode.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .topic-line {
+      position: relative;
+      margin-bottom: 1rem;
+    }
+
+    .topic-content {
+      display: flex;
+      align-items: center;
+      background-color: #f3f4f6;
+      padding: 0.5rem 5rem 0.5rem 1rem;
+      border-radius: 0.5rem;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+
+    .topic-content:hover {
+      background-color: #e5e7eb;
+    }
+
+    .skip-button {
+      position: absolute;
+      right: 0;
+      top: 0;
+      height: 100%;
+      width: 70px;
+      background-color: #dc2626;
+      color: white;
+      border: none;
+      border-top-right-radius: 0.5rem;
+      border-bottom-right-radius: 0.5rem;
+      font-size: 0.875rem;
+      cursor: pointer;
+      transition: background-color 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .skip-button:hover {
+      background-color: #b91c1c;
+    }
+
+    .skip-button.skipped {
+      background-color: #991b1b;
+    }
+
+    .skip-button.skipped:hover {
+      background-color: #7f1d1d;
+    }
+
+    .custom-range {
+      -webkit-appearance: none;
+      appearance: none;
+      height: 12px;
+      background: linear-gradient(to right, #93c5fd 0%, #3b82f6 100%);
+      border-radius: 6px;
+      outline: none;
+      padding: 0;
+      margin: 10px 0;
+      width: 100%;
+    }
+
+    .custom-range::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 24px;
+      height: 24px;
+      background: #22c55e;
+      cursor: pointer;
+      border-radius: 50%;
+      border: 2px solid white;
+      box-shadow: 0 0 2px rgba(0,0,0,0.4);
+    }
+
+    .custom-range::-moz-range-thumb {
+      width: 24px;
+      height: 24px;
+      background: #22c55e;
+      cursor: pointer;
+      border-radius: 50%;
+      border: 2px solid white;
+      box-shadow: 0 0 2px rgba(0,0,0,0.4);
+    }
+
+    .rating-ticks {
+      display: flex;
+      justify-content: space-between;
+      padding: 0 12px;
+      margin-top: -8px;
+    }
+
+    .rating-tick {
+      width: 2px;
+      height: 10px;
+      background-color: #1e40af;
+      position: relative;
+    }
+
+    .rating-tick::after {
+      content: attr(data-value);
+      position: absolute;
+      top: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 12px;
+      color: #1e40af;
+      font-weight: 500;
+    }
+
+    .rating-ticks-container {
+      position: relative;
+      padding-bottom: 25px;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+    const socket = io(window.location.origin, {
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000
+    });
+
+    socket.on('connect_error', (error) => {
+      console.error('Socket connection error:', error);
+    });
+
+    socket.on('connect', () => {
+      console.log('Socket connected successfully');
+    });
+
+    socket.on('disconnect', () => {
+      console.log('Socket disconnected');
+    });
+
+    const defaultTopics = [
+      'Fun', 'Respectful', 'Polite', 'Honest', 'Creative', 
+      'Kind', 'Reliable', 'Adventurous', 'Patient', 'Confident',
+      'Empathetic', 'Organized', 'Humorous', 'Generous', 'Ambitious', 'Calm'
+    ];
+
+    // Admin Page
+    const AdminPage = ({ onCreate }) => {
+      const [names, setNames] = useState('');
+      const [isAnonymous, setIsAnonymous] = useState(true);
+      const [isGameMode, setIsGameMode] = useState(true);
+      const [topicCount, setTopicCount] = useState(8);
+      const [topics, setTopics] = useState(defaultTopics.slice(0, 8));
+      const [error, setError] = useState('');
+      const [showError, setShowError] = useState(false);
+      const [timerInput, setTimerInput] = useState('10'); // Default to 10 minutes
+      const [showHelp, setShowHelp] = useState(false);
+
+      useEffect(() => {
+        if (error) {
+          setShowError(true);
+          const timer = setTimeout(() => {
+            setShowError(false);
+            setError('');
+          }, 5000);
+          return () => clearTimeout(timer);
+        }
+      }, [error]);
+
+      const parseTimeInput = (input) => {
+        // If input contains colons, treat as HH:MM:SS or MM:SS format
+        if (input.includes(':')) {
+          const parts = input.split(':').map(Number);
+          if (parts.length === 3) {
+            // HH:MM:SS format
+            return parts[0] * 3600 + parts[1] * 60 + parts[2];
+          } else if (parts.length === 2) {
+            // MM:SS format
+            return parts[0] * 60 + parts[1];
+          }
+        } else {
+          // Single number treated as minutes
+          const minutes = parseInt(input);
+          if (!isNaN(minutes)) {
+            return minutes * 60;
+          }
+        }
+        return null;
+      };
+
+      const handleTopicCountChange = (e) => {
+        const count = parseInt(e.target.value);
+        setTopicCount(count);
+        setTopics(prev => {
+          const newTopics = prev.slice(0, count);
+          while (newTopics.length < count) {
+            newTopics.push(defaultTopics[newTopics.length] || '');
+          }
+          return newTopics;
+        });
+      };
+
+      const handleTopicChange = (index, value) => {
+        const newTopics = [...topics];
+        newTopics[index] = value;
+        setTopics(newTopics);
+      };
+
+      const handleSubmit = (e) => {
+        e.preventDefault();
+        const players = names.split(',').map(n => n.trim()).filter(n => n);
+        
+        if (players.length < 2) {
+          setError('Enter at least 2 names');
+          return;
+        }
+
+        if (isAnonymous && players.length < 4) {
+          setError('Anonymous mode requires at least 4 players');
+          return;
+        }
+
+        const uniquePlayers = new Set(players.map(name => name.toLowerCase()));
+        if (uniquePlayers.size !== players.length) {
+          setError('Each player must have a unique name');
+          return;
+        }
+        
+        if (topics.some(t => !t.trim())) {
+          setError('All topics must be filled');
+          return;
+        }
+
+        const totalSeconds = parseTimeInput(timerInput);
+        if (totalSeconds === null || totalSeconds < 60) {
+          setError('Please enter a valid time (minimum 1 minute)');
+          return;
+        }
+        
+        socket.emit('createSession', {
+          players,
+          timer: totalSeconds,
+          isAnonymous,
+          isGameMode,
+          topics,
+        });
+      };
+
+      useEffect(() => {
+        console.log('DEBUG: AdminPage mounted');
+        socket.on('connect', () => {
+          console.log('DEBUG: Socket.IO connected to', window.location.origin);
+        });
+        socket.on('sessionCreated', (data) => {
+          console.log('DEBUG: Received sessionCreated:', data);
+          onCreate(data);
+        });
+        socket.on('connect_error', (err) => {
+          console.log('DEBUG: Socket.IO connect error:', err.message);
+        });
+        socket.on('disconnect', () => {
+          console.log('DEBUG: Socket.IO disconnected');
+        });
+        return () => {
+          console.log('DEBUG: AdminPage unmounting');
+          socket.off('connect');
+          socket.off('sessionCreated');
+          socket.off('connect_error');
+          socket.off('disconnect');
+        };
+      }, [onCreate]);
+
+      return (
+        <div className="relative p-4 max-w-md mx-auto">
+          {/* Help Button */}
+          <div className="absolute top-4 right-4">
+            <button
+              onClick={() => setShowHelp(true)}
+              className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center hover:bg-blue-600 transition-colors"
+              aria-label="Help"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Help Overlay */}
+          {showHelp && (
+            <div className="fixed inset-0 flex items-start justify-center z-50 bg-black bg-opacity-50 pt-10">
+              <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full mx-4">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-xl text-blue-600 font-bold">Game Rules</h3>
+                  <button
+                    onClick={() => setShowHelp(false)}
+                    className="text-gray-500 hover:text-gray-700"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+                <div className="space-y-4 text-gray-700">
+                  <p><strong>Anonymous Mode:</strong> Players can only see their own ratings. At least 4 players are required. System waits for ALL players to finish rating before showing results.</p>
+                  <p><strong>Public Mode:</strong> All players can see everyone's ratings. Players will go to their report page as soon as they finish rating, and the report page gets updated as more data comes in from other players.</p>
+                  <p><strong>Game Mode:</strong> System waits for ALL players to finish rating before showing results.</p>
+                  <p><strong>Timer:</strong> Players have a limited time to submit ratings. When time expires, unsubmitted ratings are marked as skipped.</p>
+                  <p><strong>Rating Scale:</strong> Rate each player from 0 (poor) to 5 (excellent) for each topic.</p>
+                  <p><strong>Skipping:</strong> You can skip rating a player for a specific topic if you don't have enough information.</p>
+                  <p><strong>Results:</strong> After submission, you'll see average ratings for each topic and an overall average.</p>
+                </div>
+                <button
+                  onClick={() => setShowHelp(false)}
+                  className="mt-6 w-full p-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                >
+                  Got it
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Error Overlay */}
+          {showError && error && (
+            <div className="fixed inset-0 flex items-center justify-center z-50 bg-black bg-opacity-50">
+              <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full mx-4">
+                <h3 className="text-xl text-red-600 font-bold mb-4">Error</h3>
+                <p className="text-gray-700 mb-4">{error}</p>
+                <button
+                  onClick={() => setShowError(false)}
+                  className="w-full p-2 bg-red-500 text-white rounded hover:bg-red-600"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          )}
+
+          <h1 className="text-2xl font-bold mb-4">The Hidden Part of Me</h1>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="block">Names (comma-separated):</label>
+              <input
+                type="text"
+                value={names}
+                onChange={(e) => setNames(e.target.value)}
+                placeholder="Babak,Vahid,Neda,Elham"
+                className="w-full p-2 border rounded"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Timer (e.g., "10" for 10 minutes, or "02:20:25" for 2h 20m 25s):</label>
+              <input
+                type="text"
+                value={timerInput}
+                onChange={(e) => setTimerInput(e.target.value)}
+                placeholder="Enter time"
+                className="w-full p-2 border rounded"
+              />
+            </div>
+            <div>
+              <label className="block">Number of Topics (8–16):</label>
+              <select
+                value={topicCount}
+                onChange={handleTopicCountChange}
+                className="w-full p-2 border rounded"
+              >
+                {[...Array(9).keys()].map(i => (
+                  <option key={i + 8} value={i + 8}>{i + 8}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block">Topics:</label>
+              {topics.map((topic, index) => (
+                <input
+                  key={index}
+                  type="text"
+                  value={topic}
+                  onChange={(e) => handleTopicChange(index, e.target.value)}
+                  className="w-full p-2 border rounded mb-2"
+                  placeholder={`Topic ${index + 1}`}
+                />
+              ))}
+            </div>
+            <div>
+              <label className="block">Mode:</label>
+              <label>
+                <input
+                  type="radio"
+                  checked={isAnonymous}
+                  onChange={() => { console.log('DEBUG: Anonymous selected'); setIsAnonymous(true); }}
+                />
+                Anonymous
+              </label>
+              <label className="ml-4">
+                <input
+                  type="radio"
+                  checked={!isAnonymous}
+                  onChange={() => { console.log('DEBUG: Public selected'); setIsAnonymous(false); }}
+                />
+                Public
+              </label>
+            </div>
+            <div>
+              <label className="block">Type:</label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={isGameMode}
+                  onChange={() => { console.log('DEBUG: Game Mode toggled'); setIsGameMode(!isGameMode); }}
+                />
+                Game Mode (Live)
+              </label>
+            </div>
+            <button type="submit" className="w-full p-2 bg-blue-500 text-white rounded">
+              Next
+            </button>
+          </form>
+        </div>
+      );
+    };
+
+    // Link Page
+    const LinkPage = ({ sessionId, links, adminLink }) => {
+      const [showQRs, setShowQRs] = React.useState(false);
+      const [timerStarted, setTimerStarted] = React.useState(false);
+      const [isStarting, setIsStarting] = React.useState(false);
+
+      useEffect(() => {
+        socket.emit('joinSession', { sessionId, isAdmin: false });
+
+        socket.on('timerStarted', (data) => {
+          console.log('DEBUG: Timer started on LinkPage', data);
+          setTimerStarted(true);
+          setIsStarting(false);
+        });
+
+        socket.on('sessionData', (data) => {
+          console.log('DEBUG: Received session data on LinkPage', data);
+          if (data.timerStarted) {
+            setTimerStarted(true);
+          }
+        });
+
+        socket.on('error', (error) => {
+          console.error('DEBUG: Socket error on LinkPage:', error);
+          setIsStarting(false);
+        });
+
+        return () => {
+          socket.off('timerStarted');
+          socket.off('sessionData');
+          socket.off('error');
+        };
+      }, []);
+
+      const handleStartTimer = () => {
+        console.log('DEBUG: Start/Restart Timer button clicked', sessionId);
+        setIsStarting(true);
+        socket.emit('startTimer', { sessionId });
+        
+        setTimeout(() => {
+          setIsStarting(false);
+        }, 3000);
+      };
+
+      const copyToClipboard = (text) => {
+        console.log('DEBUG: Copying link:', text);
+        navigator.clipboard.writeText(text).then(() => {
+          alert('Link copied to clipboard!');
+        });
+      };
+
+      const renderQRCode = (id, url) => {
+        console.log('DEBUG: Rendering QR for:', url);
+        const element = document.getElementById(id);
+        if (element && window.QRCode) {
+          window.QRCode.toCanvas(
+            element,
+            url,
+            { width: 100, height: 100 },
+            (error) => {
+              if (error) {
+                console.error('DEBUG: QRCode error:', error);
+                element.outerHTML = '<p className="text-red-500">Failed to render QR</p>';
+              }
+            }
+          );
+        } else {
+          console.log('DEBUG: QRCode or canvas missing for:', id);
+          if (element) element.outerHTML = '<p className="text-red-500">QR Code not available</p>';
+        }
+      };
+
+      return (
+        <div className="p-6 max-w-lg mx-auto bg-white rounded-lg shadow-md">
+          <div className="flex justify-between items-center mb-6">
+            <h1 className="text-3xl font-bold text-blue-600">Share Your Links</h1>
+            <div className="text-right">
+              <p className="text-gray-700 mb-1">
+                Session ID: <span className="font-semibold">{sessionId}</span>
+              </p>
+            </div>
+          </div>
+
+          <p className="text-gray-600 mb-6">
+            Send each player their unique link or scan the QR code to join the session. Use the admin link to control the game.
+          </p>
+          <div className="flex space-x-4 mb-4">
+            <button
+              onClick={() => {
+                setShowQRs(!showQRs);
+                if (!showQRs) {
+                  links.forEach((link) => {
+                    setTimeout(() => renderQRCode(`qr-${link.username}-${sessionId}`, link.url), 0);
+                  });
+                }
+              }}
+              className="flex-1 p-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            >
+              {showQRs ? 'Hide QR Codes' : 'Show QR Codes'}
+            </button>
+            <button
+              onClick={handleStartTimer}
+              disabled={isStarting}
+              className={`flex-1 p-2 text-white rounded transition-colors duration-200 ${
+                isStarting 
+                  ? 'bg-gray-400 cursor-not-allowed'
+                  : timerStarted 
+                    ? 'bg-green-500 hover:bg-green-600' 
+                    : 'bg-blue-500 hover:bg-blue-600'
+              }`}
+            >
+              {isStarting 
+                ? 'Starting...' 
+                : timerStarted 
+                  ? 'Restart Timer' 
+                  : 'Start Timer'}
+            </button>
+          </div>
+
+          <h2 className="text-2xl font-semibold mb-4 text-gray-800">Player Links</h2>
+          <ul className="space-y-6">
+            {links.map((link) => (
+              <li key={link.username} className="p-4 bg-gray-100 rounded-md">
+                <div className="flex flex-col sm:flex-row items-center justify-between">
+                  <div className="mb-4 sm:mb-0">
+                    <span className="font-medium text-gray-800 block">{link.username}</span>
+                    <a
+                      href={link.url}
+                      className="text-blue-500 hover:underline truncate max-w-xs block"
+                      title={link.url}
+                    >
+                      {link.url}
+                    </a>
+                    <button
+                      onClick={() => copyToClipboard(link.url)}
+                      className="mt-2 p-2 bg-green-500 text-white rounded hover:bg-green-600"
+                    >
+                      Copy Link
+                    </button>
+                  </div>
+                  <canvas
+                    id={`qr-${link.username}-${sessionId}`}
+                    className="flex-shrink-0"
+                    style={{ display: showQRs ? 'block' : 'none', width: '100px', height: '100px' }}
+                  ></canvas>
+                </div>
+              </li>
+            ))}
+          </ul>
+
+          <h2 className="text-2xl font-semibold mt-6 mb-4 text-gray-800">Admin Link</h2>
+          <div className="p-4 bg-gray-100 rounded-md">
+            <a
+              href={adminLink}
+              className="text-blue-500 hover:underline truncate max-w-xs block"
+              title={adminLink}
+            >
+              {adminLink}
+            </a>
+            <button
+              onClick={() => copyToClipboard(adminLink)}
+              className="mt-2 p-2 bg-green-500 text-white rounded hover:bg-green-600"
+            >
+              Copy Admin Link
+            </button>
+          </div>
+        </div>
+      );
+    };
+
+    // Rating Page
+    const RatingPage = ({ sessionId, token, isAdmin }) => {
+      const [session, setSession] = React.useState(null);
+      const [username, setUsername] = React.useState('');
+      const [ratings, setRatings] = React.useState({});
+      const [error, setError] = React.useState('');
+      const [submitted, setSubmitted] = React.useState(false);
+      const [openDropdown, setOpenDropdown] = React.useState(null);
+      const [results, setResults] = React.useState(null);
+      const [editMode, setEditMode] = React.useState(false);
+      const [selectedPlayer, setSelectedPlayer] = React.useState(null);
+      const [warning, setWarning] = React.useState('');
+      const [showError, setShowError] = React.useState(false);
+      const [timeLeft, setTimeLeft] = React.useState(null);
+      const [timerStarted, setTimerStarted] = React.useState(false);
+      const [selectedResultPlayer, setSelectedResultPlayer] = React.useState('');
+
+      useEffect(() => {
+        const hashParts = window.location.hash.split('/');
+        const token = hashParts[hashParts.length - 1];
+        console.log('DEBUG: RatingPage mounted', { hash: window.location.hash, token, sessionId, isAdmin });
+        socket.emit('joinSession', { sessionId, token, isAdmin });
+
+        const handleSessionData = (data) => {
+          console.log('DEBUG: Received sessionData', JSON.stringify(data, null, 2));
+          if (data.message) {
+            setError(data.message);
+          } else {
+            setSession({
+              players: data.players || [],
+              topics: data.topics || [],
+              phase: data.phase || 'rating',
+              timer: data.timer,
+              isAnonymous: data.anonymous,
+              isGameMode: data.gameMode
+            });
+            setUsername(data.username);
+            
+            // Update timer state when joining
+            if (data.timerStarted) {
+              setTimerStarted(true);
+              const elapsed = Math.floor((Date.now() - data.startTime) / 1000);
+              const remaining = Math.max(0, (data.timer || 0) - elapsed);
+              setTimeLeft(remaining);
+            }
+
+            // ✅ Auto-select first rateable player for *this* user
+            const availablePlayers = (data.players || []).filter(p => p !== data.username && p !== 'admin');
+            if (availablePlayers.length > 0) {
+              setSelectedPlayer(availablePlayers[0]);
+            }
+
+            // ✅ Initialize ratings only once
+            if (!ratingsInitialized(data.players || [], data.topics || [])) {
+              const initialRatings = {};
+              (data.players || []).forEach(player => {
+                if (player !== data.username) {
+                  initialRatings[player] = {};
+                  (data.topics || []).forEach(topic => {
+                    initialRatings[player][topic] = null;
+                  });
+                }
+              });
+              setRatings(initialRatings);
+              console.log('DEBUG: Initialized ratings', initialRatings);
+            }
+          }
+        };
+
+        const handleTimerStarted = (data) => {
+          console.log('DEBUG: Timer started event received', data);
+          setTimerStarted(true);
+          setTimeLeft(data.timer);
+        };
+
+        const handleAllRatingsSubmitted = (data) => {
+          console.log('DEBUG: All ratings submitted event received', data);
+          // Check if this result is specifically for the current user
+          if (data.isAnonymous && data.username === username) {
+            setResults(data);
+          } else if (!data.isAnonymous) {
+            // For public mode, show all results
+            setResults(data);
+          }
+        };
+
+        socket.on('sessionData', handleSessionData);
+        socket.on('timerStarted', handleTimerStarted);
+        socket.on('allRatingsSubmitted', handleAllRatingsSubmitted);
+        socket.on('error', (err) => {
+          console.log('DEBUG: Socket error received', err);
+          setError(err.message);
+        });
+
+        // Cleanup listeners on unmount
+        return () => {
+          console.log('DEBUG: RatingPage unmounting');
+          socket.off('sessionData', handleSessionData);
+          socket.off('timerStarted', handleTimerStarted);
+          socket.off('allRatingsSubmitted', handleAllRatingsSubmitted);
+          socket.off('error');
+        };
+      }, [sessionId, isAdmin, username]);
+
+      useEffect(() => {
+        if (!timerStarted || timeLeft === null) return;
+        
+        const timer = setInterval(() => {
+          setTimeLeft(prev => {
+            if (prev <= 0) {
+              clearInterval(timer);
+              return 0;
+            }
+            return prev - 1;
+          });
+        }, 1000);
+        
+        return () => clearInterval(timer);
+      }, [timerStarted, timeLeft]);
+
+      useEffect(() => {
+        if (error) {
+          setShowError(true);
+          // Auto-hide error after 5 seconds
+          const timer = setTimeout(() => setShowError(false), 5000);
+          return () => clearTimeout(timer);
+        }
+      }, [error]);
+
+      useEffect(() => {
+        if (results) {
+          console.log('DEBUG: Results received', results);
+          // Go to report page when results are available
+          setSubmitted(true);
+          
+          // Set initial selected result player to current user
+          if (session && username) {
+            setSelectedResultPlayer(username);
+          }
+        }
+      }, [results, session, username]);
+
+      const ratingsInitialized = (players, topics) => {
+        return Object.keys(ratings).length > 0 &&
+          players.every(player => 
+            player === username || 
+            (ratings[player] && topics.every(topic => topic in ratings[player]))
+          );
+      };
+
+      const handleRatingChange = (player, topic, value) => {
+        console.log('DEBUG: Rating changed', { player, topic, value });
+        setRatings(prev => ({
+          ...prev,
+          [player]: {
+            ...prev[player],
+            [topic]: parseInt(value)
+          }
+        }));
+      };
+
+      const handleSubmit = (auto = false) => {
+        console.log('DEBUG: Submit button clicked, auto:', auto, 'ratings:', ratings);
+        let finalRatings = { ...ratings };
+        
+        // Check if all players are rated for all topics
+        const unratedPlayers = [];
+        Object.entries(finalRatings).forEach(([player, playerRatings]) => {
+          const hasUnrated = Object.values(playerRatings).some(rating => rating === null);
+          if (hasUnrated) {
+            unratedPlayers.push(player);
+          }
+        });
+
+        if (!auto && unratedPlayers.length > 0) {
+          setWarning(`You haven't rated the following players for all topics: ${unratedPlayers.join(', ')}`);
+          return;
+        }
+
+        setWarning(''); // Clear warning on valid submit
+
+        // Convert 'skipped' to a numeric value (e.g., -1) for submission
+        for (let player in finalRatings) {
+          for (let topic in finalRatings[player]) {
+            if (finalRatings[player][topic] === 'skipped') {
+              finalRatings[player][topic] = -1; // Use -1 to represent skipped ratings
+            }
+          }
+        }
+
+        console.log('DEBUG: Validation passed, emitting submitRatings', { sessionId, username, ratings: finalRatings });
+        socket.emit('submitRatings', { sessionId, username, ratings: finalRatings });
+        setSubmitted(true);
+        setEditMode(false);
+      };
+
+      const handleBack = () => {
+        console.log('DEBUG: Back button clicked, returning to edit mode');
+        setSubmitted(false);
+        setEditMode(true);
+        setError('');
+        setWarning('');
+      };
+
+      const toggleDropdown = (player, topic) => {
+        const key = `${player}-${topic}`;
+        console.log('DEBUG: Toggling dropdown', key);
+        setOpenDropdown(openDropdown === key ? null : key);
+      };
+
+      const formatTime = (seconds) => {
+        if (!seconds) return '00:00';
+        const hours = Math.floor(seconds / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+        const secs = seconds % 60;
+        
+        // Only show hours if we have any
+        if (hours > 0) {
+          return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+        }
+        // Otherwise just show minutes and seconds
+        return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+      };
+
+      const TimerDisplay = () => {
+        const isLastTenSeconds = timeLeft <= 10;
+        return (
+          <h2 
+            className={`text-2xl font-bold mb-4 ${
+              isLastTenSeconds ? 'text-red-600 animate-pulse' : 'text-blue-600'
+            }`}
+          >
+            Time Left: {formatTime(timeLeft)}
+          </h2>
+        );
+      };
+
+      const generateRandomRatings = () => {
+        const newRatings = { ...ratings };
+        session.players.forEach(player => {
+          if (player !== username) { // Skip self-rating
+            session.topics.forEach(topic => {
+              const randomValue = Math.random();
+              if (randomValue < 0.2) {
+                newRatings[player][topic] = 'skipped'; // 20% chance to skip
+              } else {
+                newRatings[player][topic] = Math.floor(Math.random() * 6); // Random rating between 0 and 5
+              }
+            });
+          }
+        });
+        setRatings(newRatings);
+        console.log('DEBUG: Random ratings generated', newRatings);
+      };
+
+      if (error) {
+        if (error.includes('connection') || error.includes('Socket') || error.includes('server')) {
+          return (
+            <div className="p-6 max-w-lg mx-auto bg-white rounded-lg shadow-md">
+              <h2 className="text-2xl text-red-600 mb-4">Connection Error</h2>
+              <p className="text-red-600">{error}</p>
+              <button 
+                onClick={() => window.location.reload()} 
+                className="mt-4 p-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+              >
+                Retry Connection
+              </button>
+            </div>
+          );
+        } else if (error) {
+          return (
+            <div className="p-6 max-w-lg mx-auto bg-white rounded-lg shadow-md">
+              <h2 className="text-2xl text-red-600 mb-4">Error</h2>
+              <p className="text-red-600">{error || 'An unexpected error occurred.'}</p>
+              <button 
+                onClick={() => setError('')} 
+                className="mt-4 p-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+              >
+                Dismiss
+              </button>
+            </div>
+          );
+        }
+      }
+
+      if (!session) {
+        return (
+          <div className="p-6 max-w-lg mx-auto bg-white rounded-lg shadow-md">
+            <p className="text-center text-xl">Loading session...</p>
+          </div>
+        );
+      }
+
+      if (results) {
+        console.log('DEBUG: Rendering results', results);
+        if (results.isAnonymous) {
+          return (
+            <div className="p-6 max-w-lg mx-auto bg-white rounded-lg shadow-md">
+              {timerStarted && timeLeft !== null && <TimerDisplay />}
+              <h2 className="text-2xl text-blue-600 mb-4">Your Ratings</h2>
+              <p className="mb-2">Session ID: {sessionId}</p>
+              <p className="mb-4">You are: {username}</p>
+              
+              {/* Player Selection Buttons with Lock Icons */}
+              <div className="flex flex-wrap gap-2 mb-6">
+                {session.players.filter(p => p !== 'admin').map(player => (
+                  <button
+                    key={player}
+                    className={`px-4 py-2 rounded-lg text-white bg-blue-600 hover:bg-blue-500 flex items-center`}
+                    disabled
+                  >
+                    {player} 
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
+                  </button>
+                ))}
+              </div>
+              
+              <h3 className="text-xl text-blue-600 mb-2">Average Ratings Received</h3>
+              {Object.entries(results.results.topicAverages).map(([topic, avg]) => (
+                <p key={topic} className="mb-2">
+                  {topic}: {typeof avg === 'string' ? avg : avg.toFixed(1)}
+                  {typeof avg === 'number' && (
+                    <span className="text-gray-500 text-sm ml-2">
+                      ({results.results.skippedCounts?.[topic] || 0} skipped)
+                    </span>
+                  )}
+                </p>
+              ))}
+              <p className="mt-4 font-bold">
+                Total Average: {typeof results.results.totalAverage === 'string' 
+                  ? results.results.totalAverage 
+                  : results.results.totalAverage.toFixed(1)}
+              </p>
+            </div>
+          );
+        } else {
+          // Organize ratings by target and topic
+          const organizedRatings = {};
+          session.players.filter(p => p !== 'admin').forEach(player => {
+            organizedRatings[player] = {
+              byTopic: {},
+              totalAverage: 0
+            };
+            
+            // Initialize topics
+            session.topics.forEach(topic => {
+              organizedRatings[player].byTopic[topic] = [];
+            });
+
+            // Fill in ratings
+            const playerRatings = results.results.filter(r => r.target === player);
+            playerRatings.forEach(rating => {
+              organizedRatings[player].byTopic[rating.topic].push({
+                rater: rating.rater,
+                rating: rating.rating
+              });
+            });
+
+            // Calculate averages
+            let totalSum = 0;
+            let totalCount = 0;
+            Object.values(organizedRatings[player].byTopic).forEach(ratings => {
+              if (ratings.length > 0) {
+                totalSum += ratings.reduce((sum, r) => sum + r.rating, 0);
+                totalCount += ratings.length;
+              }
+            });
+            organizedRatings[player].totalAverage = totalCount > 0 
+              ? (totalSum / totalCount).toFixed(1) 
+              : 'No ratings';
+          });
+
+          return (
+            <div className="p-6 max-w-lg mx-auto bg-white rounded-lg shadow-md">
+              {timerStarted && timeLeft !== null && <TimerDisplay />}
+              <h2 className="text-2xl text-blue-600 mb-4">Public Rating Report</h2>
+              <p className="mb-2">Session ID: {sessionId}</p>
+              <p className="mb-4">You are: {username}</p>
+
+              {/* Player Selection Buttons */}
+              <div className="flex flex-wrap gap-2 mb-6">
+                {session.players.filter(p => p !== 'admin').map(player => (
+                  <button
+                    key={player}
+                    onClick={() => setSelectedResultPlayer(player)}
+                    className={`px-4 py-2 rounded-lg text-white ${
+                      selectedResultPlayer === player ? 'bg-blue-600' : 'bg-gray-400'
+                    } hover:bg-blue-500 transition-colors`}
+                  >
+                    {player}
+                  </button>
+                ))}
+              </div>
+
+              {/* Selected Player's Results */}
+              {selectedResultPlayer && organizedRatings[selectedResultPlayer] && (
+                <div className="p-4 bg-gray-50 rounded-lg">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-xl text-blue-600">Ratings for {selectedResultPlayer}</h3>
+                    <span className="text-lg font-bold">
+                      Average: {organizedRatings[selectedResultPlayer].totalAverage}
+                    </span>
+                  </div>
+
+                  {Object.entries(organizedRatings[selectedResultPlayer].byTopic).map(([topic, ratings]) => (
+                    <div key={topic} className="mb-4">
+                      <h4 className="font-semibold text-gray-700 mb-2">{topic}</h4>
+                      <div className="pl-4">
+                        {ratings.length > 0 ? (
+                          ratings.map((r, idx) => (
+                            <p key={idx} className="text-gray-600">
+                              {r.rater}: <span className="font-semibold">{r.rating}</span>
+                            </p>
+                          ))
+                        ) : (
+                          <p className="text-gray-500 italic">No ratings</p>
+                        )}
+                        <p className="mt-1 text-blue-600">
+                          Average: {ratings.length > 0 
+                            ? (ratings.reduce((sum, r) => sum + r.rating, 0) / ratings.length).toFixed(1)
+                            : 'N/A'}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        }
+      }
+
+      if (submitted && !results) {
+        return (
+          <div className="p-6 max-w-lg mx-auto bg-white rounded-lg shadow-md">
+            <h2 className="text-2xl text-blue-600 mb-4">Ratings Submitted</h2>
+            <p className="mb-4">Your ratings have been submitted. Wait for the report to be generated.</p>
+            {timeLeft > 0 && (
+              <button
+                onClick={handleBack}
+                className="w-full p-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+              >
+                Back to Edit Ratings
+              </button>
+            )}
+          </div>
+        );
+      }
+
+      return (
+        <div className="relative p-6 max-w-lg mx-auto bg-white rounded-lg shadow-md">
+          {timerStarted && timeLeft !== null && <TimerDisplay />}
+          {/* Error Overlay */}
+          {showError && (
+            <div className="fixed inset-0 flex items-center justify-center z-50 bg-black bg-opacity-50">
+              <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full mx-4">
+                <h3 className="text-xl text-red-600 font-bold mb-4">Error</h3>
+                <p className="text-gray-700 mb-4">{error}</p>
+                <button
+                  onClick={() => setShowError(false)}
+                  className="w-full p-2 bg-red-500 text-white rounded hover:bg-red-600"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Warning Banner */}
+          {warning && (
+            <div className="mb-4 p-4 bg-yellow-100 border border-yellow-400 text-yellow-700 rounded">
+              <p>{warning}</p>
+              <button
+                onClick={() => setWarning('')}
+                className="mt-2 p-2 bg-yellow-500 text-white rounded hover:bg-yellow-600 w-full"
+              >
+                Continue Rating
+              </button>
+            </div>
+          )}
+
+          <h2 className="text-2xl text-blue-600 mb-4">Rate Players</h2>
+          <p className="mb-2">Session ID: {sessionId}</p>
+          <p className="mb-4">You are: {username}</p>
+
+          {/* Player Selector Buttons */}
+          <div className="flex flex-wrap gap-2 mb-6">
+            {session.players.filter(p => p !== 'admin').map(player => (
+              <button
+                key={player}
+                onClick={() => setSelectedPlayer(player)}
+                className={`px-4 py-2 rounded-lg text-white ${
+                  player === username 
+                    ? 'bg-yellow-500 cursor-not-allowed' 
+                    : selectedPlayer === player 
+                      ? 'bg-blue-600' 
+                      : 'bg-gray-400'
+                } hover:bg-blue-500 transition-colors`}
+                disabled={player === username}
+              >
+                {player} {player === username ? '(You)' : ''}
+              </button>
+            ))}
+            <button
+              onClick={generateRandomRatings}
+              className="px-4 py-2 rounded-lg text-white bg-purple-600 hover:bg-purple-700 transition-colors"
+            >
+              Test
+            </button>
+          </div>
+
+          {/* Rating Form for Selected Player */}
+          {selectedPlayer && selectedPlayer !== username && (
+            <div className="mb-6">
+              <h3 className="text-xl text-blue-600 mb-2">Rate {selectedPlayer}</h3>
+              {(session.topics || []).map(topic => {
+                const dropdownKey = `${selectedPlayer}-${topic}`;
+                return (
+                  <div key={topic} className="mb-4">
+                    <div className="topic-line">
+                      <div className="topic-content" onClick={() => toggleDropdown(selectedPlayer, topic)}>
+                        <span className="font-medium">{topic}</span>
+                        <span className={
+                          ratings[selectedPlayer] && ratings[selectedPlayer][topic] !== null
+                            ? ratings[selectedPlayer][topic] === 'skipped'
+                              ? 'text-gray-500 italic ml-2'
+                              : 'text-green-600 font-semibold ml-2'
+                            : 'text-red-600 italic ml-2'
+                        }>
+                          {ratings[selectedPlayer] && ratings[selectedPlayer][topic] !== null
+                            ? ratings[selectedPlayer][topic] === 'skipped'
+                              ? 'N/A'
+                              : ratings[selectedPlayer][topic]
+                            : 'Not rated'}
+                        </span>
+                      </div>
+                      <button
+                        className={`skip-button ${ratings[selectedPlayer] && ratings[selectedPlayer][topic] === 'skipped' ? 'skipped' : ''}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const newRatings = { ...ratings };
+                          if (newRatings[selectedPlayer][topic] === 'skipped') {
+                            newRatings[selectedPlayer][topic] = 0;
+                          } else {
+                            newRatings[selectedPlayer][topic] = 'skipped';
+                          }
+                          setRatings(newRatings);
+                        }}
+                      >
+                        {ratings[selectedPlayer] && ratings[selectedPlayer][topic] === 'skipped' ? 'Skipped' : 'Skip'}
+                      </button>
+                    </div>
+                    {openDropdown === dropdownKey && (
+                      <div className="mt-2 p-2 bg-gray-50 rounded-lg">
+                        <div className="relative">
+                          <input
+                            type="range"
+                            min="0"
+                            max="5"
+                            step="1"
+                            value={ratings[selectedPlayer] && ratings[selectedPlayer][topic] !== 'skipped'
+                              ? ratings[selectedPlayer][topic] || 0
+                              : 0}
+                            onChange={(e) => handleRatingChange(selectedPlayer, topic, e.target.value)}
+                            disabled={ratings[selectedPlayer] && ratings[selectedPlayer][topic] === 'skipped'}
+                            className="custom-range"
+                            style={{ width: '100%' }}
+                          />
+                          <div className="rating-ticks-container">
+                            <div className="rating-ticks">
+                              {[0, 1, 2, 3, 4, 5].map((tick) => (
+                                <div key={tick} className="rating-tick" data-value={tick} />
+                              ))}
+                            </div>
+                          </div>
+                          <div className="flex justify-between text-sm text-gray-600 mt-2">
+                            <span>0 (Poor)</span>
+                            <span>5 (Excellent)</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <button
+            onClick={() => handleSubmit(false)}
+            className="w-full p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            disabled={!!submitted}
+          >
+            Submit Ratings
+          </button>
+        </div>
+      );
+    };
+
+    // Main App Component (keep only one version)
+    const App = () => {
+      const [page, setPage] = useState('admin');
+      const [sessionId, setSessionId] = useState('');
+      const [username, setUsername] = useState('');
+      const [token, setToken] = useState('');
+      const [links, setLinks] = useState([]);
+      const [adminLink, setAdminLink] = useState('');
+      const [isAdmin, setIsAdmin] = useState(false);
+
+      useEffect(() => {
+        const handleHashChange = () => {
+          const hash = window.location.hash;
+          console.log('Hash changed:', hash);
+          
+          if (hash === '' || hash === '#/' || hash === '#') {
+            setPage('admin');
+            setSessionId('');
+            setUsername('');
+            setToken('');
+            setIsAdmin(false);
+          } else if (hash.startsWith('#/link/')) {
+            const [, , sid] = hash.split('/');
+            setPage('links');
+            setSessionId(sid);
+          } else if (hash.startsWith('#/rate/')) {
+            const [, , sid, tokenOrAdmin] = hash.split('/');
+            console.log('Rate page params:', { sid, tokenOrAdmin });
+            
+            setSessionId(sid);
+            setPage('rating');
+            
+            if (tokenOrAdmin === 'admin') {
+              setIsAdmin(true);
+              setUsername('admin');
+              setToken('');
+            } else {
+              setIsAdmin(false);
+              setToken(tokenOrAdmin);
+              setUsername(''); // Will be set when session data is received
+            }
+          }
+        };
+
+        handleHashChange();
+        window.addEventListener('hashchange', handleHashChange);
+        return () => window.removeEventListener('hashchange', handleHashChange);
+      }, []);
+
+      const handleCreate = (data) => {
+        console.log('handleCreate:', data);
+        setSessionId(data.sessionId);
+        setLinks(data.links);
+        setAdminLink(data.adminLink);
+        setPage('links');
+      };
+
+      return (
+        <div>
+          {page === 'admin' && <AdminPage onCreate={handleCreate} />}
+          {page === 'links' && <LinkPage sessionId={sessionId} links={links} adminLink={adminLink} />}
+          {page === 'rating' && (
+            <RatingPage 
+              sessionId={sessionId} 
+              token={token} 
+              isAdmin={isAdmin} 
+            />
+          )}
+        </div>
+      );
+    };
+
+    // Render
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
