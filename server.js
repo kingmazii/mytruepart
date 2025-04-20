@@ -79,17 +79,27 @@ io.on('connection', (socket) => {
 });
 
 const emitResults = async (session, sessionId, io) => {
-  console.log('DEBUG: emitResults called', {
-    sessionId,
-    submitted: [...new Set(session.ratings.map(r => r.rater))].length,
-    isAnonymous: session.isAnonymous,
-    isGameMode: session.isGameMode
-  });
+  try {
+    console.log('DEBUG: emitResults called', {
+      sessionId,
+      submitted: [...new Set(session.ratings.map(r => r.rater))].length,
+      isAnonymous: session.isAnonymous,
+      isGameMode: session.isGameMode
+    });
 
-  const players = session.players.filter(p => p !== 'admin');
-  const submittedUsers = [...new Set(session.ratings.map(r => r.rater))];
-  // Add your emitResults logic here, e.g.:
-  // io.to(sessionId).emit('results', { players, submittedUsers });
+    const players = session.players.filter(p => p !== 'admin');
+    const submittedUsers = [...new Set(session.ratings.map(r => r.rater))];
+    const lastSubmittedUser = submittedUsers[submittedUsers.length - 1];
+
+    console.log('DEBUG: Emitting results for player in public mode', lastSubmittedUser);
+
+    // Example: If updating session in MongoDB
+    await Session.updateOne({ sessionId }, { $set: { phase: 'results' } });
+
+    io.to(sessionId).emit('results', { players, submittedUsers, lastSubmittedUser });
+  } catch (error) {
+    console.error('Error in emitResults:', error);
+  }
 };
 
 // Error handling middleware
